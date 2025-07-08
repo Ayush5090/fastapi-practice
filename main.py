@@ -1,121 +1,96 @@
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import List
-import json, os
+from typing import Annotated
+from sqlalchemy.orm import Session
+from utils import create_access_token, verify_token, hash_password, verify_password
+import models, json
+from database import engine, SessionLocal
 
 app = FastAPI()
-
-class Tea(BaseModel):
-    id: int
-    name: str
-    origin: str
+models.Base.metadata.create_all(bind=engine)
 
 @app.exception_handler(HTTPException)
 async def custom_http_exception(request: Request, exc: HTTPException):
     return JSONResponse(
         status_code=exc.status_code,
-        content={"message": exc.detail if isinstance(exc.detail, str) else exc.detail.get("message", str(exc.detail))}
+        content={
+            "success": False,
+            "message": exc.detail if isinstance(exc.detail, str) else exc.detail.get("message", str(exc.detail))}
     )
 
 
-teas: List[Tea] = []
+class UserModel(BaseModel):
+    name: str
+    email: str
+    password: str
 
-try:
-    with open('database.txt', 'r') as file:
-
-        data = json.load(file)
-        if isinstance(data, list):
-            teas = [Tea(**tea) for tea in data]
-        else:
-            teas = []
-except (FileNotFoundError, json.JSONDecodeError):
-    teas = []
+class Addresses(BaseModel):
+    user_id: int
+    city: str
+    state: str
+    country: str
 
 
-@app.get('/')
-def read_root():
-    return {'message': 'Welcome to FastAPI'}
-
-
-@app.get('/teas')
-def get_teas():
+def get_db():
+    db = SessionLocal()
     try:
-        with open('database.txt', 'r') as file:
-            teas = json.load(file)
-            return{
-                'message': f"{len(teas)} teas found.",
-                'data': teas
-            }
-    except (FileNotFoundError, json.JSONDecodeError):
-        raise HTTPException(status_code=404, detail='Database file not found or empty file found')
+        yield db
+    finally:
+        db.close()
 
+db_dependency = Annotated[Session, Depends(get_db)]
 
-@app.get('/tea/{tea_id}')
-def get_tea(tea_id: int):
-    for index, tea in enumerate(teas):
-        if tea.id == tea_id:
-            return {
-                'message': 'Tea found',
-                'tea': tea
-            }
-    raise HTTPException(status_code=404, detail='Tea not found for the given id.')
+@app.post('/signup/')
+async def signup(user: UserModel, db: db_dependency):
+    db_user = models.Users(name = user.name, email = user.email, password = hash_password(user.password))
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
 
-
-@app.post('/add_tea')
-def add_tea(tea: Tea):
-
-    if any(existing_tea.id == tea.id for existing_tea in teas):
-        raise HTTPException(status_code=409, detail={'message': f"Tea already exists with ID {tea.id}"})
-    
-    teas.append(tea)
-    with open('database.txt', 'w') as file:
-        json.dump([tea.model_dump() for tea in teas], file)
     return {
-        'message': 'Tea successfully saved',
-        'tea': tea
+        'success': True,
+        'message': 'User signed up successfully',
+        'user': user
     }
 
 
-@app.put('/update/{tea_id}')
-def update_tea(tea_id: int, updated_tea: Tea):
-    for index, tea in enumerate(teas):
-        if tea.id == tea_id:
-            teas[index] = updated_tea
+@app.get('/login/')
+async def login(email: str, password: str, db: db_dependency):
+    user = db.query(models.Users).filter(models.Users.email == email).first()
 
-            with open('database.txt', 'w') as file:
-                json.dump([tea.model_dump() for tea in teas], file)
-            return {
-                'message': 'Tea successfully updated',
-                'tea': updated_tea
-            }
-    raise HTTPException(status_code=404, detail='Tea not found with the given id.')
+    if user is None:
+        raise HTTPException(status_code=404, detail='User not found, Please sign up to create account.')
 
-
-@app.delete('/delete/{tea_id}')
-def delete_tea(tea_id: int):
-    for index, tea in enumerate(teas):
-        if tea.id == tea_id:
-            deleted = teas.pop(index)
-
-            with open('database.txt', 'w') as file:
-                json.dump([tea.model_dump() for tea in teas] , file)
-
-            return {
-                'message': 'Tea deleted successfully',
-                'deleted_tea': deleted
-            }
-    raise HTTPException(status_code=404, detail='Tea not found for the given id.')
+    if verify_password(password, user.password):
+        token = create_access_token(user.to_dict())
+        return {
+            "success": True,
+            "message": "Login successfull",
+            "token": token
+        }
+    else:
+        raise HTTPException(status_code=401, detail='Wrong password entered')
 
 
-@app.get('/download_file')
-def download_tea_file():
+@app.put('/update_user')
+async def update_user(updated_user: UserModel, db: db_dependency, payload: dict = Depends(verify_token)):
 
-    if not os.path.exists('database.txt'):
-        raise HTTPException(status_code=404, detail='Database file not found')
+    user_id = payload.get('id')
+
+    if not user_id:
+        raise HTTPException(status_code=404, detail='Invalid token, User id not found')
     
-    return FileResponse(
-        path='database.txt',
-        filename='database.txt',
-        media_type='text/plain'
-    )
+    user = db.query(models.Users).filter(models.Users.id == user_id).update({
+        "name": updated_user.name,
+        "email": updated_user.email,
+        "password": updated_user.password
+    })
+
+    db.commit()
+
+    return {
+        'success': True,
+        'message': 'User updated successfully',
+        'user': updated_user
+    }
