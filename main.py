@@ -73,6 +73,21 @@ async def login(email: str, password: str, db: db_dependency):
         raise HTTPException(status_code=401, detail='Wrong password entered')
 
 
+@app.get('/user')
+async def get_user(user_id: int, db: db_dependency, payload: dict = Depends(verify_token)):
+
+    user = db.query(models.Users).filter(models.Users.id == user_id).first()
+
+    if user is None:
+        raise HTTPException(status_code=404, detail='User not found')
+    
+    return {
+        'success': True,
+        'message': 'User found',
+        'user': user
+    }
+
+
 @app.put('/update_user')
 async def update_user(updated_user: UserModel, db: db_dependency, payload: dict = Depends(verify_token)):
 
@@ -81,16 +96,33 @@ async def update_user(updated_user: UserModel, db: db_dependency, payload: dict 
     if not user_id:
         raise HTTPException(status_code=404, detail='Invalid token, User id not found')
     
-    user = db.query(models.Users).filter(models.Users.id == user_id).update({
+    db.query(models.Users).filter(models.Users.id == user_id).update({
         "name": updated_user.name,
         "email": updated_user.email,
-        "password": updated_user.password
+        "password": hash_password(updated_user.password)
     })
-
+    
     db.commit()
 
     return {
         'success': True,
         'message': 'User updated successfully',
         'user': updated_user
+    }
+
+
+@app.delete('/delete')
+async def delete_user(user_id: int, db: db_dependency, payload: dict = Depends(verify_token)):
+
+    user = db.query(models.Users).filter(models.Users.id == user_id).first()
+
+    if user is None:
+        raise HTTPException(status_code=404, detail='User not found')
+    
+    db.delete(user)
+    db.commit()
+
+    return {
+        'success': True,
+        'message': 'Used deleted successfully'
     }
