@@ -48,8 +48,8 @@ async def verify_token(token: str = Depends(oauth2_scheme)) -> dict:
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALOGRITHM])
-        if not payload.get("id"):
-            raise credentials_exception
+        # if not payload.get("id"):
+            # raise credentials_exception
         return payload
     
     except jwt.InvalidTokenError:
