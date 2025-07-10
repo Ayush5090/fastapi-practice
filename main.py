@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from utils import create_access_token, verify_token, hash_password, verify_password
 from database import engine, SessionLocal
 from uuid import uuid4
-import models, os
+import models, os, json
 
 app = FastAPI()
 models.Base.metadata.create_all(bind=engine)
@@ -20,17 +20,17 @@ async def custom_http_exception(request: Request, exc: HTTPException):
             "message": exc.detail if isinstance(exc.detail, str) else exc.detail.get("message", str(exc.detail))}
     )
 
-
-class UserModel(BaseModel):
-    name: str
-    email: str
-    password: str
-
 class Addresses(BaseModel):
     user_id: int
     city: str
     state: str
     country: str
+
+class UserModel(BaseModel):
+    name: str
+    email: str
+    password: str
+    address: Addresses
 
 
 def get_db():
@@ -85,7 +85,7 @@ async def get_user(user_id: int, db: db_dependency, payload: dict = Depends(veri
     return {
         'success': True,
         'message': 'User found',
-        'user': user
+        'user': user.to_dict()
     }
 
 
@@ -96,6 +96,7 @@ async def update_user(
     email: Optional[str] = Form(None),
     password: Optional[str] = Form(None),
     profile_image: Optional[UploadFile] = File(None),
+    address: Optional[str] = Form(None),
     payload: dict = Depends(verify_token),
 ):
 
@@ -113,8 +114,35 @@ async def update_user(
     if password is not None:
         update_data['password'] = hash_password(password)
 
+    updated_address = {}
+    if address is not None:
+        try:
+            address_data = json.loads(address)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail='Invalid address format, expected JSON')
+        
+        if "city" in address_data and address_data["city"] is not None:
+            updated_address['city'] = address_data['city']
+
+        if 'state' in address_data and address_data['city'] is not None:
+            updated_address['state'] = address_data['state']
+
+        if 'country' in address_data and address_data['country'] is not None:
+            updated_address['country'] = address_data['country']
+
+        if updated_address is not None:
+            existing_address = db.query(models.Addresses).filter(models.Addresses.user_id == user_id).first()
+
+            if existing_address:
+                db.query(models.Addresses).filter(models.Addresses.user_id == user_id).update(updated_address)
+            else:
+                updated_address['user_id'] = user_id
+                new_address = models.Addresses(**updated_address)
+                db.add(new_address)
+            db.commit()
+
     if profile_image:
-        MAX_FILE_SIZE = 1 * 1024 * 1024
+        MAX_FILE_SIZE = 5 * 1024 * 1024
         UPLOAD_DIR = "uploads/profile_images"
         os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -146,8 +174,8 @@ async def update_user(
                 'message': 'Failed to save profile image file.',
                 'error': str(e)
             })
-        
-    if not update_data:
+                
+    if not update_data and not updated_address:
         raise HTTPException(status_code=400, detail="No fields provided to update")
     
     db.query(models.Users).filter(models.Users.id == user_id).update(update_data)
@@ -159,7 +187,8 @@ async def update_user(
         'user': {
             'name': name,
             'email': email,
-            'profile_image': update_data.get('profile_image')
+            'profile_image': update_data.get('profile_image'),
+            'address': updated_address if updated_address else None
         }
     }
 

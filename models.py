@@ -1,4 +1,5 @@
 from sqlalchemy import Column, ForeignKey, Integer, String, DateTime
+from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime, timezone
 
@@ -13,6 +14,8 @@ class Users(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+
+    addresses = relationship("Addresses", back_populates="user", uselist=False, cascade="all, delete-orphan")
     
     def to_dict(self):
         """
@@ -25,6 +28,7 @@ class Users(Base):
             "id": self.id,
             "name": self.name,
             "email": self.email,
+            "address": self.addresses.to_dict() if self.addresses else None,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat()
         }
@@ -40,3 +44,19 @@ class Addresses(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+
+    user = relationship("Users", back_populates="addresses")
+
+    def to_dict(self):
+        """
+        Convert the Addresses object to a dictionary.
+        """
+        return {
+            "id": self.id,
+            "city": self.city,
+            "state": self.state,
+            "country": self.country,
+            "user_id": self.user_id,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat()
+        }
