@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, DateTime
+from sqlalchemy import Column, ForeignKey, Integer, String, DateTime
 from database import Base
 from datetime import datetime, timezone
 
@@ -9,6 +9,7 @@ class Users(Base):
     name = Column(String, index=True)
     email  = Column(String, index=True)
     password = Column(String, index=True)
+    profile_image = Column(String, nullable=True)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
