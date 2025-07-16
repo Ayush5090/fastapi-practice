@@ -1,6 +1,6 @@
 from sqlalchemy import Column, ForeignKey, Integer, String, DateTime
 from sqlalchemy.orm import relationship
-from database import Base
+from app.database import Base
 from datetime import datetime, timezone
 
 class Users(Base):
@@ -28,6 +28,7 @@ class Users(Base):
             "id": self.id,
             "name": self.name,
             "email": self.email,
+            "profile_image": self.profile_image,
             "address": self.addresses.to_dict() if self.addresses else None,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat()

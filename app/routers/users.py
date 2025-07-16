@@ -1,81 +1,17 @@
-from fastapi import FastAPI, HTTPException, Depends, Request, Form, UploadFile, File
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-from typing import Annotated, Optional
-from sqlalchemy.orm import Session
-from utils import create_access_token, verify_token, hash_password, verify_password
-from database import engine, SessionLocal
+from fastapi import APIRouter, HTTPException, Depends, Form, UploadFile, File
+from typing import Optional
+from app.utils import verify_token, hash_password
 from uuid import uuid4
-import models, os, json
+import app.models as models, app.dependencies as dependencies
+import os, json
 
-app = FastAPI()
-models.Base.metadata.create_all(bind=engine)
+router = APIRouter(
+    prefix="/users",
+    tags=["users"],
+)
 
-@app.exception_handler(HTTPException)
-async def custom_http_exception(request: Request, exc: HTTPException):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "success": False,
-            "message": exc.detail if isinstance(exc.detail, str) else exc.detail.get("message", str(exc.detail))}
-    )
-
-class Addresses(BaseModel):
-    user_id: int
-    city: str
-    state: str
-    country: str
-
-class UserModel(BaseModel):
-    name: str
-    email: str
-    password: str
-    address: Addresses
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-db_dependency = Annotated[Session, Depends(get_db)]
-
-@app.post('/signup/')
-async def signup(user: UserModel, db: db_dependency):
-    db_user = models.Users(name = user.name, email = user.email, password = hash_password(user.password))
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-
-    return {
-        'success': True,
-        'message': 'User signed up successfully',
-        'user': user
-    }
-
-
-@app.get('/login/')
-async def login(email: str, password: str, db: db_dependency):
-    user = db.query(models.Users).filter(models.Users.email == email).first()
-
-    if user is None:
-        raise HTTPException(status_code=404, detail='User not found, Please sign up to create account.')
-
-    if verify_password(password, user.password):
-        token = create_access_token(user.to_dict())
-        return {
-            "success": True,
-            "message": "Login successfull",
-            "token": token
-        }
-    else:
-        raise HTTPException(status_code=401, detail='Wrong password entered')
-
-
-@app.get('/user')
-async def get_user(user_id: int, db: db_dependency, payload: dict = Depends(verify_token)):
+@router.get('/get_user')
+async def get_user(user_id: int, db: dependencies.db_dependency, payload: dict = Depends(verify_token)):
 
     user = db.query(models.Users).filter(models.Users.id == user_id).first()
 
@@ -89,9 +25,9 @@ async def get_user(user_id: int, db: db_dependency, payload: dict = Depends(veri
     }
 
 
-@app.put('/update_user')
+@router.put('/update_user')
 async def update_user(
-    db: db_dependency,
+    db: dependencies.db_dependency,
     name: Optional[str] = Form(None), 
     email: Optional[str] = Form(None),
     password: Optional[str] = Form(None),
@@ -193,8 +129,8 @@ async def update_user(
     }
 
 
-@app.delete('/delete')
-async def delete_user(user_id: int, db: db_dependency, payload: dict = Depends(verify_token)):
+@router.delete('/delete')
+async def delete_user(user_id: int, db: dependencies.db_dependency, payload: dict = Depends(verify_token)):
 
     user = db.query(models.Users).filter(models.Users.id == user_id).first()
 

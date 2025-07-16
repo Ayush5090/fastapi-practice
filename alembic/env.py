@@ -88,7 +88,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import your models
-from models import Base  # Adjust to 'from app.models import Base' if models.py is in app/
+from app.models import Base  # Adjust to 'from app.models import Base' if models.py is in app/
 
 # This is the Alembic Config object
 config = context.config
